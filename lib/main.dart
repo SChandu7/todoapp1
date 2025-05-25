@@ -114,6 +114,14 @@ class Todo {
     required this.assignment,
     this.isCompleted = false,
   });
+  factory Todo.fromJson(Map<String, dynamic> json) {
+    return Todo(
+      title: json['userdata'],
+      day: json['days'] ?? 'Unspecified',
+      assignment: json['assignments'] ?? 'Unspecified',
+      // Default or derive if you have a field
+    );
+  }
 }
 
 // Dummy resource provider
@@ -132,7 +140,7 @@ class _TodoListPageState extends State<TodoListPage> {
   String presentUser = 'default';
   String? _selectedDay;
   String? _selectedAssignment;
-  final List<Todo> _todos = [];
+  List<Todo> _todos = [];
   DateTime? _selectedDate;
   int _selectedIndex = 0;
   String error = '';
@@ -164,6 +172,25 @@ class _TodoListPageState extends State<TodoListPage> {
     setState(() {
       _todos[index].isCompleted = !_todos[index].isCompleted;
     });
+  }
+
+  Future<void> fetchTodosFromAPI() async {
+    final response = await http.get(Uri.parse('http://127.0.0.1:8000/receive'));
+
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(response.body);
+      setState(() {
+        _todos = data.map((item) => Todo.fromJson(item)).toList();
+      });
+    } else {
+      throw Exception('Failed to load todos');
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    fetchTodosFromAPI();
   }
 
   Widget _buildChatsView() {
@@ -257,7 +284,6 @@ class _TodoListPageState extends State<TodoListPage> {
                           if (_controller.text.isNotEmpty &&
                               _selectedDay != null &&
                               _selectedAssignment != null) {
-                            _addTodo();
                             setState(() {
                               isLoading = true;
                               error = '';
@@ -380,6 +406,8 @@ class _TodoListPageState extends State<TodoListPage> {
   }
 
   Widget _buildStatusView() {
+    fetchTodosFromAPI();
+
     // Group todos by day first
     Map<String, Map<String, List<Todo>>> groupedByDay = {};
 
