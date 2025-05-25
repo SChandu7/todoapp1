@@ -5,7 +5,7 @@ import 'package:animate_do/animate_do.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_keyboard_visibility/flutter_keyboard_visibility.dart';
-import 'package:todoapp/resource.dart';
+import 'resource.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -135,15 +135,18 @@ class TodoListPage extends StatefulWidget {
 
 class _TodoListPageState extends State<TodoListPage> {
   final TextEditingController _controller = TextEditingController();
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
   final TextEditingController _addassignmentcontroller =
       TextEditingController();
+
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  String presentUser = resource().PresentWorkingUser;
+  String? _selectedDay;
   String? _selectedassignmentDay;
   final TextEditingController _adddescriptioncontroller =
       TextEditingController();
 
-  String presentUser = 'default';
-  String? _selectedDay;
   String? _selectedAssignment;
   List<Todo> _todos = [];
   DateTime? _selectedDate;
@@ -154,6 +157,25 @@ class _TodoListPageState extends State<TodoListPage> {
   String _searchQuery = '';
   DateTime? _startDate;
   DateTime? _endDate;
+  Future<void> fetchTodosFromAPI() async {
+    final response = await http.get(Uri.parse('http://127.0.0.1:8000/receive'));
+
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(response.body);
+      setState(() {
+        _todos = data.map((item) => Todo.fromJson(item)).toList();
+      });
+    } else {
+      print('Failed to load todos: ${response.statusCode}');
+      throw Exception('Failed to load todos');
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    fetchTodosFromAPI();
+  }
 
   void _addTodo() {
     setState(() {
@@ -177,31 +199,6 @@ class _TodoListPageState extends State<TodoListPage> {
     setState(() {
       _todos[index].isCompleted = !_todos[index].isCompleted;
     });
-  }
-
-  Future<void> fetchTodosFromAPI() async {
-    try {
-      final response = await http.get(
-        Uri.parse('http://127.0.0.1:8000/receive'),
-      );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        setState(() {
-          _todos = data.map((item) => Todo.fromJson(item)).toList();
-        });
-      } else {
-        print('Failed to load todos: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Fetch error: $e');
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    fetchTodosFromAPI();
   }
 
   Widget _buildChatsView() {
@@ -229,7 +226,7 @@ class _TodoListPageState extends State<TodoListPage> {
                     "📋 Add New Task",
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 5),
                   TextField(
                     controller: _controller,
                     decoration: const InputDecoration(
@@ -295,6 +292,7 @@ class _TodoListPageState extends State<TodoListPage> {
                           if (_controller.text.isNotEmpty &&
                               _selectedDay != null &&
                               _selectedAssignment != null) {
+                            _addTodo();
                             setState(() {
                               isLoading = true;
                               error = '';
@@ -737,88 +735,76 @@ class _TodoListPageState extends State<TodoListPage> {
               ? const Center(child: Text('No tasks found.'))
               : ListView(
                   padding: const EdgeInsets.all(16),
-                  children: (() {
-                    var sortedEntries = groupedByDay.entries.toList();
-                    sortedEntries.sort((a, b) {
-                      int dayA = int.tryParse(
-                              a.key.replaceAll(RegExp(r'[^0-9]'), '')) ??
-                          0;
-                      int dayB = int.tryParse(
-                              b.key.replaceAll(RegExp(r'[^0-9]'), '')) ??
-                          0;
-                      return dayA.compareTo(dayB);
-                    });
-                    return sortedEntries.map((dayEntry) {
-                      String day = dayEntry.key;
-                      Map<String, List<Todo>> assignments = dayEntry.value;
+                  children: groupedByDay.entries.map((dayEntry) {
+                    String day = dayEntry.key;
+                    Map<String, List<Todo>> assignments = dayEntry.value;
 
-                      return Card(
-                        elevation: 4,
-                        margin: const EdgeInsets.only(bottom: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                    return Card(
+                      elevation: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: ExpansionTile(
+                        title: Row(
+                          children: [
+                            const Icon(Icons.today, color: Colors.blue),
+                            const SizedBox(width: 10),
+                            Text(
+                              day,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
-                        child: ExpansionTile(
-                          title: Row(
-                            children: [
-                              const Icon(Icons.today, color: Colors.blue),
-                              const SizedBox(width: 10),
-                              Text(
-                                day,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                          children: assignments.entries.map((assignmentEntry) {
-                            String assignment = assignmentEntry.key;
-                            List<Todo> todos = assignmentEntry.value;
+                        children: assignments.entries.map((assignmentEntry) {
+                          String assignment = assignmentEntry.key;
+                          List<Todo> todos = assignmentEntry.value;
 
-                            return ListTile(
-                              title: Text(assignment),
-                              trailing: const Icon(
-                                Icons.arrow_forward_ios,
-                                size: 16,
-                              ),
-                              onTap: () {
-                                showDialog(
-                                  context: context,
-                                  builder: (ctx) {
-                                    return AlertDialog(
-                                      title: Text('$day - $assignment'),
-                                      content: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: todos.map((todo) {
-                                          return ListTile(
-                                            title: Text(todo.title),
-                                            subtitle: Text(
-                                              DateFormat(
-                                                'MMM d, HH:mm',
-                                              ).format(todo.time),
-                                            ),
-                                          );
-                                        }).toList(),
+                          return ListTile(
+                            title: Text(assignment),
+                            trailing: const Icon(
+                              Icons.arrow_forward_ios,
+                              size: 16,
+                            ),
+                            onTap: () {
+                              showDialog(
+                                context: context,
+                                builder: (ctx) {
+                                  return AlertDialog(
+                                    title: Text('$day - $assignment'),
+                                    content: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: todos.map((todo) {
+                                        return ListTile(
+                                          title: Text(todo.title),
+                                          subtitle: Text(
+                                            DateFormat(
+                                              'MMM d, HH:mm',
+                                            ).format(todo.time),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.of(
+                                          ctx,
+                                        ).pop(),
+                                        child: const Text('Close'),
                                       ),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () => Navigator.of(
-                                            ctx,
-                                          ).pop(),
-                                          child: const Text('Close'),
-                                        ),
-                                      ],
-                                    );
-                                  },
-                                );
-                              },
-                            );
-                          }).toList(),
-                        ),
-                      );
-                    }).toList();
-                  })(),
+                                    ],
+                                  );
+                                },
+                              );
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    );
+                  }).toList(),
                 ),
         ),
       ],
@@ -867,6 +853,8 @@ class _TodoListPageState extends State<TodoListPage> {
       drawer: Consumer<resource>(
         builder: (context, resource, child) {
           presentUser = resource.PresentWorkingUser;
+          print(presentUser);
+          debugPrint('Present User: $presentUser');
           return Drawer(
             child: Column(
               children: [
