@@ -124,7 +124,50 @@ class Todo {
   }
 }
 
+class Todo2 {
+  final String days;
+  final String assignments;
+  final String description;
+
+  Todo2({
+    required this.days,
+    required this.assignments,
+    required this.description,
+  });
+
+  factory Todo2.fromJson(Map<String, dynamic> json) {
+    return Todo2(
+      days: json['days'],
+      assignments: json['assignments'],
+      description: json['description'],
+    );
+  }
+}
+
 // Dummy resource provider
+class AssignmentItem {
+  final String description;
+
+  AssignmentItem({required this.description});
+
+  factory AssignmentItem.fromJson(Map<String, dynamic> json) {
+    return AssignmentItem(description: json['description']);
+  }
+}
+
+class AssignmentGroup {
+  final String assignment;
+  final List<AssignmentItem> items;
+
+  AssignmentGroup({required this.assignment, required this.items});
+}
+
+class DayGroup {
+  final String day;
+  final List<AssignmentGroup> assignments;
+
+  DayGroup({required this.day, required this.assignments});
+}
 
 class TodoListPage extends StatefulWidget {
   const TodoListPage({super.key});
@@ -154,6 +197,8 @@ class _TodoListPageState extends State<TodoListPage> {
   String _searchQuery = '';
   DateTime? _startDate;
   DateTime? _endDate;
+  List<Todo2> _todos2 = [];
+  bool _isLoading2 = true;
 
   void _addTodo() {
     setState(() {
@@ -198,10 +243,28 @@ class _TodoListPageState extends State<TodoListPage> {
     }
   }
 
+  Future<void> fetchTodosFromAPI2() async {
+    final url = Uri.parse('http://127.0.0.1:8000/display');
+    final response = await http.get(url);
+
+    if (response.statusCode == 200) {
+      List<dynamic> data = jsonDecode(response.body);
+      setState(() {
+        _todos2 = data.map((json) => Todo2.fromJson(json)).toList();
+        _isLoading2 = false;
+      });
+    } else {
+      // Handle error
+      setState(() {
+        _isLoading2 = false;
+      });
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    fetchTodosFromAPI();
+    fetchTodosFromAPI2();
   }
 
   Widget _buildChatsView() {
@@ -421,6 +484,9 @@ class _TodoListPageState extends State<TodoListPage> {
       'Day 1': ['Problem 1', 'Problem 2'],
       'Day 2': ['Problem 1', 'Problem 2', 'Problem 3'],
       'Day 3': ['Problem 1', 'Problem 2', 'Problem 3', 'Problem 4'],
+      'Day 4': ['Problem 1', 'Problem 2'],
+      'Day 5': ['Problem 1', 'Problem 2'],
+      'Day 6': ['Problem 1', 'Problem 2'],
     };
 
     return SingleChildScrollView(
@@ -825,6 +891,215 @@ class _TodoListPageState extends State<TodoListPage> {
     );
   }
 
+  Widget _buildStatusView2() {
+    fetchTodosFromAPI2();
+    // Group todos by day first
+    Map<String, Map<String, List<Todo2>>> groupedByDay = {};
+    print(_todos2);
+
+    for (var todo in _todos2) {
+      final day = todo.days;
+      final assignment = todo.assignments;
+
+      if (!groupedByDay.containsKey(day)) {
+        groupedByDay[day] = {};
+      }
+
+      if (!groupedByDay[day]!.containsKey(assignment)) {
+        groupedByDay[day]![assignment] = [];
+      }
+
+      groupedByDay[day]![assignment]!.add(todo);
+    }
+
+    return Column(
+      children: [
+        // Search bar
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: TextField(
+            decoration: const InputDecoration(
+              labelText: 'Search Task',
+              prefixIcon: Icon(Icons.search),
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (value) {
+              setState(() {
+                _searchQuery = value.toLowerCase();
+              });
+            },
+          ),
+        ),
+
+        // Filter tabs
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children:
+                ['All', 'Completed', 'Pending'].asMap().entries.map((entry) {
+              return ChoiceChip(
+                label: Text(entry.value),
+                selected: _selectedTabIndex == entry.key,
+                onSelected: (_) {
+                  setState(() {
+                    _selectedTabIndex = entry.key;
+                  });
+                },
+              );
+            }).toList(),
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // Date Range Filter
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    DateTime? picked = await showDatePicker(
+                      context: context,
+                      initialDate: DateTime.now(),
+                      firstDate: DateTime(2022),
+                      lastDate: DateTime.now(),
+                    );
+                    if (picked != null) {
+                      setState(() {
+                        _startDate = picked;
+                      });
+                    }
+                  },
+                  icon: const Icon(Icons.calendar_today),
+                  label: Text(
+                    _startDate == null
+                        ? 'Start Date'
+                        : 'From: ${DateFormat.yMMMd().format(_startDate!)}',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    DateTime? picked = await showDatePicker(
+                      context: context,
+                      initialDate: DateTime.now(),
+                      firstDate: DateTime(2022),
+                      lastDate: DateTime.now(),
+                    );
+                    if (picked != null) {
+                      setState(() {
+                        _endDate = picked;
+                      });
+                    }
+                  },
+                  icon: const Icon(Icons.calendar_month),
+                  label: Text(
+                    _endDate == null
+                        ? 'End Date'
+                        : 'To: ${DateFormat.yMMMd().format(_endDate!)}',
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // Day Cards
+        Expanded(
+          child: groupedByDay.isEmpty
+              ? const Center(child: Text('No tasks found.'))
+              : ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: (() {
+                    var sortedEntries = groupedByDay.entries.toList();
+                    sortedEntries.sort((a, b) {
+                      int dayA = int.tryParse(
+                              a.key.replaceAll(RegExp(r'[^0-9]'), '')) ??
+                          0;
+                      int dayB = int.tryParse(
+                              b.key.replaceAll(RegExp(r'[^0-9]'), '')) ??
+                          0;
+                      return dayA.compareTo(dayB);
+                    });
+                    return sortedEntries.map((dayEntry) {
+                      String day = dayEntry.key;
+                      Map<String, List<Todo2>> assignments = dayEntry.value;
+
+                      return Card(
+                        elevation: 4,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: ExpansionTile(
+                          title: Row(
+                            children: [
+                              const Icon(Icons.today, color: Colors.blue),
+                              const SizedBox(width: 10),
+                              Text(
+                                day,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          children: assignments.entries.map((assignmentEntry) {
+                            String assignments = assignmentEntry.key;
+                            List<Todo2> todos = assignmentEntry.value;
+
+                            return ListTile(
+                              title: Text(assignments),
+                              trailing: const Icon(
+                                Icons.arrow_forward_ios,
+                                size: 16,
+                              ),
+                              onTap: () {
+                                showDialog(
+                                  context: context,
+                                  builder: (ctx) {
+                                    return AlertDialog(
+                                      title: Text('$day - $assignments'),
+                                      content: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: todos.map((todo) {
+                                          return ListTile(
+                                            title: Text(todo.days),
+                                          );
+                                        }).toList(),
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.of(
+                                            ctx,
+                                          ).pop(),
+                                          child: const Text('Close'),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                );
+                              },
+                            );
+                          }).toList(),
+                        ),
+                      );
+                    }).toList();
+                  })(),
+                ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildCallsView() {
     final List<String> members = ['Alice', 'Bob', 'Charlie'];
     return ListView.builder(
@@ -857,7 +1132,18 @@ class _TodoListPageState extends State<TodoListPage> {
         debugPrint(presentUser.toString());
       }
     } else if (_selectedIndex == 1) {
-      currentBody = _buildStatusView();
+      if (Provider.of<resource>(context, listen: false).PresentWorkingUser ==
+          'mahesh') {
+        currentBody = _buildStatusView2();
+        debugPrint(
+            'Entered inthisstatement $Provider.of<resource>(context, listen: false).PresentWorkingUser;');
+        print("enterednin");
+      } else {
+        currentBody = _buildStatusView();
+
+        print(resource().PresentWorkingUser);
+        debugPrint(presentUser.toString());
+      }
     } else {
       currentBody = _buildCallsView();
     }
