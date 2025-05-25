@@ -271,16 +271,21 @@ class _TodoListPageState extends State<TodoListPage> {
                                           listen: false)
                                       .PresentWorkingUser,
                                   'userdata': _controller.text.trim(),
+                                  'days': _selectedDay?.trim() ?? '',
+                                  'assignments':
+                                      _selectedAssignment?.trim() ?? '',
                                 },
                               );
-                              print(_controller.text.trim());
 
                               debugPrint(
                                   'Response code: ${response.statusCode}');
                               debugPrint('Response body: ${response.body}');
                               debugPrint(
                                   'userid : ${Provider.of<resource>(context, listen: false).PresentWorkingUser}');
-                              debugPrint('user data : ${_controller.text}');
+                              debugPrint(
+                                  'user data : ${_selectedDay?.trim() ?? ''}');
+                              debugPrint(
+                                  'assignments : ${_selectedAssignment?.trim() ?? ''}');
 
                               if (response.statusCode == 200) {
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -320,7 +325,6 @@ class _TodoListPageState extends State<TodoListPage> {
                             }
                           }
                         }
-                        ;
                       }
                     },
                     icon: const Icon(Icons.add),
