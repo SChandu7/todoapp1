@@ -50,21 +50,24 @@ class Todo {
 }
 
 class Todo2 {
+  final String userid;
+  final String userdata;
   final String days;
   final String assignments;
-  final String description;
 
   Todo2({
+    required this.userid,
+    required this.userdata,
     required this.days,
     required this.assignments,
-    required this.description,
   });
 
   factory Todo2.fromJson(Map<String, dynamic> json) {
     return Todo2(
-      days: json['days'],
-      assignments: json['assignments'],
-      description: json['description'],
+      userid: json['userid']?.toString() ?? '',
+      userdata: json['userdata'] ?? '',
+      days: json['days'] ?? '',
+      assignments: json['assignments'] ?? '',
     );
   }
 }
@@ -169,7 +172,7 @@ class _TodoListPageState extends State<TodoListPage> {
     }
   }
 
-  Future<void> fetchTodosFromAPI2() async {
+  Future<void> fetchTodosFromAPI22() async {
     final url = Uri.parse(
         'https://8671a5f8-6323-4a16-9356-a2dd53e7078c-00-2m041txxfet0b.pike.replit.dev/display');
     final response = await http.get(url);
@@ -182,6 +185,24 @@ class _TodoListPageState extends State<TodoListPage> {
       });
     } else {
       // Handle error
+      setState(() {
+        _isLoading2 = false;
+      });
+    }
+  }
+
+  Future<void> fetchTodosFromAPI2() async {
+    final url = Uri.parse(
+        'https://8671a5f8-6323-4a16-9356-a2dd53e7078c-00-2m041txxfet0b.pike.replit.dev/receive');
+    final response = await http.get(url);
+
+    if (response.statusCode == 200) {
+      List<dynamic> data = jsonDecode(response.body);
+      setState(() {
+        _todos2 = data.map((json) => Todo2.fromJson(json)).toList();
+        _isLoading2 = false;
+      });
+    } else {
       setState(() {
         _isLoading2 = false;
       });
@@ -822,6 +843,101 @@ class _TodoListPageState extends State<TodoListPage> {
 
   Widget _buildStatusView2() {
     fetchTodosFromAPI2();
+    // Group todos by: userid -> day -> assignment
+    Map<String, Map<String, Map<String, List<Todo2>>>> grouped = {};
+
+    for (var todo in _todos2) {
+      final userId = todo.userid;
+      final day = todo.days;
+      final assignment = todo.assignments;
+
+      grouped.putIfAbsent(userId, () => {});
+      grouped[userId]!.putIfAbsent(day, () => {});
+      grouped[userId]![day]!.putIfAbsent(assignment, () => []);
+      grouped[userId]![day]![assignment]!.add(todo);
+    }
+
+    return _isLoading2
+        ? const Center(child: CircularProgressIndicator())
+        : grouped.isEmpty
+            ? const Center(child: Text("No data found."))
+            : ListView(
+                padding: const EdgeInsets.all(16),
+                children: grouped.entries.map((userEntry) {
+                  final userId = userEntry.key;
+                  final daysMap = userEntry.value;
+
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: ExpansionTile(
+                      title: Text(
+                        "User: $userId",
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      children: daysMap.entries.map((dayEntry) {
+                        final day = dayEntry.key;
+                        final assignmentsMap = dayEntry.value;
+
+                        return Card(
+                          margin: const EdgeInsets.symmetric(
+                              vertical: 8, horizontal: 12),
+                          child: ExpansionTile(
+                            title: Text(
+                              day,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            children: assignmentsMap.entries.map((assignEntry) {
+                              final assignment = assignEntry.key;
+                              final todos = assignEntry.value;
+
+                              return ListTile(
+                                title: Text(assignment),
+                                trailing: const Icon(Icons.arrow_forward_ios,
+                                    size: 16),
+                                onTap: () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: Text('$assignment - $day'),
+                                      content: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: todos.map((todo) {
+                                          return ListTile(
+                                            title: Text(todo.userdata),
+                                          );
+                                        }).toList(),
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.of(ctx).pop(),
+                                          child: const Text('Close'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              );
+                            }).toList(),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  );
+                }).toList(),
+              );
+  }
+
+  Widget _buildCallsView() {
+    fetchTodosFromAPI2();
     // Group todos by day first
     Map<String, Map<String, List<Todo2>>> groupedByDay = {};
     print(_todos2);
@@ -857,84 +973,6 @@ class _TodoListPageState extends State<TodoListPage> {
                 _searchQuery = value.toLowerCase();
               });
             },
-          ),
-        ),
-
-        // Filter tabs
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children:
-                ['All', 'Completed', 'Pending'].asMap().entries.map((entry) {
-              return ChoiceChip(
-                label: Text(entry.value),
-                selected: _selectedTabIndex == entry.key,
-                onSelected: (_) {
-                  setState(() {
-                    _selectedTabIndex = entry.key;
-                  });
-                },
-              );
-            }).toList(),
-          ),
-        ),
-
-        const SizedBox(height: 12),
-
-        // Date Range Filter
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () async {
-                    DateTime? picked = await showDatePicker(
-                      context: context,
-                      initialDate: DateTime.now(),
-                      firstDate: DateTime(2022),
-                      lastDate: DateTime.now(),
-                    );
-                    if (picked != null) {
-                      setState(() {
-                        _startDate = picked;
-                      });
-                    }
-                  },
-                  icon: const Icon(Icons.calendar_today),
-                  label: Text(
-                    _startDate == null
-                        ? 'Start Date'
-                        : 'From: ${DateFormat.yMMMd().format(_startDate!)}',
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () async {
-                    DateTime? picked = await showDatePicker(
-                      context: context,
-                      initialDate: DateTime.now(),
-                      firstDate: DateTime(2022),
-                      lastDate: DateTime.now(),
-                    );
-                    if (picked != null) {
-                      setState(() {
-                        _endDate = picked;
-                      });
-                    }
-                  },
-                  icon: const Icon(Icons.calendar_month),
-                  label: Text(
-                    _endDate == null
-                        ? 'End Date'
-                        : 'To: ${DateFormat.yMMMd().format(_endDate!)}',
-                  ),
-                ),
-              ),
-            ],
           ),
         ),
 
@@ -1029,17 +1067,30 @@ class _TodoListPageState extends State<TodoListPage> {
     );
   }
 
-  Widget _buildCallsView() {
-    final List<String> members = ['Alice', 'Bob', 'Charlie'];
-    return ListView.builder(
-      itemCount: members.length,
-      itemBuilder: (context, index) {
-        return ListTile(
-          leading: const Icon(Icons.call),
-          title: Text(members[index]),
-          trailing: const Icon(Icons.phone_forwarded),
-        );
-      },
+  Widget _buildCallsView2() {
+    return Column(
+      children: [
+        // Search bar
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: TextField(
+            decoration: const InputDecoration(
+              labelText: 'Search User For Approval',
+              prefixIcon: Icon(Icons.search),
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (value) {
+              setState(() {
+                _searchQuery = value.toLowerCase();
+              });
+            },
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // Day Cards
+      ],
     );
   }
 
@@ -1073,6 +1124,10 @@ class _TodoListPageState extends State<TodoListPage> {
         print(resource().PresentWorkingUser);
         debugPrint(presentUser.toString());
       }
+    } else if (Provider.of<resource>(context, listen: false)
+            .PresentWorkingUser ==
+        'mahesh') {
+      currentBody = _buildCallsView2();
     } else {
       currentBody = _buildCallsView();
     }
