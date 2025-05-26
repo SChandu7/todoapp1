@@ -72,6 +72,26 @@ class Todo2 {
   }
 }
 
+class Todo3 {
+  final String days;
+  final String assignments;
+  final String description;
+
+  Todo3({
+    required this.days,
+    required this.assignments,
+    required this.description,
+  });
+
+  factory Todo3.fromJson(Map<String, dynamic> json) {
+    return Todo3(
+      days: json['days'],
+      assignments: json['assignments'],
+      description: json['description'],
+    );
+  }
+}
+
 // Dummy resource provider
 class AssignmentItem {
   final String description;
@@ -126,7 +146,9 @@ class _TodoListPageState extends State<TodoListPage> {
   DateTime? _startDate;
   DateTime? _endDate;
   List<Todo2> _todos2 = [];
+  List<Todo3> _todos3 = [];
   bool _isLoading2 = true;
+  bool _isLoading3 = true;
 
   void _addTodo() {
     setState(() {
@@ -172,7 +194,7 @@ class _TodoListPageState extends State<TodoListPage> {
     }
   }
 
-  Future<void> fetchTodosFromAPI22() async {
+  Future<void> fetchTodosFromAPI3() async {
     final url = Uri.parse(
         'https://8671a5f8-6323-4a16-9356-a2dd53e7078c-00-2m041txxfet0b.pike.replit.dev/display');
     final response = await http.get(url);
@@ -180,13 +202,13 @@ class _TodoListPageState extends State<TodoListPage> {
     if (response.statusCode == 200) {
       List<dynamic> data = jsonDecode(response.body);
       setState(() {
-        _todos2 = data.map((json) => Todo2.fromJson(json)).toList();
-        _isLoading2 = false;
+        _todos3 = data.map((json) => Todo3.fromJson(json)).toList();
+        _isLoading3 = false;
       });
     } else {
       // Handle error
       setState(() {
-        _isLoading2 = false;
+        _isLoading3 = false;
       });
     }
   }
@@ -213,6 +235,7 @@ class _TodoListPageState extends State<TodoListPage> {
   void initState() {
     super.initState();
     fetchTodosFromAPI2();
+    fetchTodosFromAPI3();
   }
 
   Widget _buildChatsView() {
@@ -937,12 +960,12 @@ class _TodoListPageState extends State<TodoListPage> {
   }
 
   Widget _buildCallsView() {
-    fetchTodosFromAPI2();
+    fetchTodosFromAPI3();
     // Group todos by day first
-    Map<String, Map<String, List<Todo2>>> groupedByDay = {};
-    print(_todos2);
+    Map<String, Map<String, List<Todo3>>> groupedByDay = {};
+    print(_todos3);
 
-    for (var todo in _todos2) {
+    for (var todo in _todos3) {
       final day = todo.days;
       final assignment = todo.assignments;
 
@@ -997,7 +1020,7 @@ class _TodoListPageState extends State<TodoListPage> {
                     });
                     return sortedEntries.map((dayEntry) {
                       String day = dayEntry.key;
-                      Map<String, List<Todo2>> assignments = dayEntry.value;
+                      Map<String, List<Todo3>> assignments = dayEntry.value;
 
                       return Card(
                         elevation: 4,
@@ -1021,7 +1044,7 @@ class _TodoListPageState extends State<TodoListPage> {
                           ),
                           children: assignments.entries.map((assignmentEntry) {
                             String assignments = assignmentEntry.key;
-                            List<Todo2> todos = assignmentEntry.value;
+                            List<Todo3> todos = assignmentEntry.value;
 
                             return ListTile(
                               title: Text(assignments),
