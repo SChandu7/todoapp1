@@ -28,23 +28,33 @@ class TodoApp extends StatelessWidget {
 
 // Dummy Todo class
 class Todo {
-  String title;
-  String day;
-  String assignment;
+  final String userid;
+  final String userdata;
+  final String day;
+  final String assignment;
+  final String title; // alias for userdata
+  final DateTime time; // optional, mock if needed
   bool isCompleted;
-  DateTime time = DateTime.now();
+
   Todo({
-    required this.title,
+    required this.userid,
+    required this.userdata,
     required this.day,
     required this.assignment,
+    required this.title,
+    required this.time,
     this.isCompleted = false,
   });
+
   factory Todo.fromJson(Map<String, dynamic> json) {
     return Todo(
-      title: json['userdata'],
-      day: json['days'] ?? 'Unspecified',
-      assignment: json['assignments'] ?? 'Unspecified',
-      // Default or derive if you have a field
+      userid: json['userid'] ?? '',
+      userdata: json['userdata'] ?? '',
+      day: json['days'] ?? '',
+      assignment: json['assignments'] ?? '',
+      title: json['userdata'] ?? '', // match existing UI field
+      time: DateTime.now(), // or parse if API returns time
+      isCompleted: json['isCompleted'] ?? false,
     );
   }
 }
@@ -149,18 +159,6 @@ class _TodoListPageState extends State<TodoListPage> {
   List<Todo3> _todos3 = [];
   bool _isLoading2 = true;
   bool _isLoading3 = true;
-
-  void _addTodo() {
-    setState(() {
-      _todos.add(
-        Todo(
-          title: _controller.text,
-          day: _selectedDay!,
-          assignment: _selectedAssignment!,
-        ),
-      );
-    });
-  }
 
   void _deleteTodo(int index) {
     setState(() {
@@ -649,23 +647,25 @@ class _TodoListPageState extends State<TodoListPage> {
     Map<String, Map<String, List<Todo>>> groupedByDay = {};
 
     for (var todo in _todos.where((todo) {
-      bool matchesSearch = todo.title.toLowerCase().contains(_searchQuery);
+      // ✅ New condition: Filter only for selectedUserId
+      bool matchesUser = todo.userid ==
+          Provider.of<resource>(context, listen: false).PresentWorkingUser;
 
+      bool matchesSearch = todo.title.toLowerCase().contains(_searchQuery);
       bool matchesTab = _selectedTabIndex == 0 ||
           (_selectedTabIndex == 1 && todo.isCompleted) ||
           (_selectedTabIndex == 2 && !todo.isCompleted);
 
       bool matchesDate = true;
       if (_startDate != null) {
-        matchesDate &= todo.time.isAfter(
-          _startDate!.subtract(Duration(days: 1)),
-        );
+        matchesDate &=
+            todo.time.isAfter(_startDate!.subtract(Duration(days: 1)));
       }
       if (_endDate != null) {
         matchesDate &= todo.time.isBefore(_endDate!.add(Duration(days: 1)));
       }
 
-      return matchesSearch && matchesTab && matchesDate;
+      return matchesUser && matchesSearch && matchesTab && matchesDate;
     })) {
       groupedByDay.putIfAbsent(todo.day, () => {});
       groupedByDay[todo.day]!.putIfAbsent(todo.assignment, () => []).add(todo);
