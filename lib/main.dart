@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:todoapp/resource.dart';
-import 'package:todoapp/loginsignup.dart';
+import 'resource.dart';
+import 'loginsignup.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:intl/intl.dart';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 
 void main() {
   runApp(
@@ -159,6 +163,11 @@ class _TodoListPageState extends State<TodoListPage> {
   List<Todo3> _todos3 = [];
   bool _isLoading2 = true;
   bool _isLoading3 = true;
+  String status = '';
+  Uint8List? fileBytes;
+  String? fileName;
+  File? file;
+  String? fileName2;
 
   void _deleteTodo(int index) {
     setState(() {
@@ -229,6 +238,50 @@ class _TodoListPageState extends State<TodoListPage> {
     }
   }
 
+  Future<void> pickAndUploadFile() async {
+    print("entered");
+    final result = await FilePicker.platform.pickFiles();
+    print("entered 2");
+
+    if (result == null) {
+      setState(() {
+        status = 'No file selected.';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(status),
+        ),
+      );
+      return;
+    } else {
+      setState(() {
+        status = 'File selected: ${result.files.first.name}';
+      });
+      if (kIsWeb) {
+        // Web
+        fileBytes = result.files.first.bytes;
+        fileName = result.files.first.name;
+        print('pickand uploadFile called');
+        print("File bytes: $fileBytes");
+        print("File name: $fileName");
+      } else {
+        // Mobile/Desktop
+        file = File(result.files.single.path!);
+        fileName = result.files.single.name;
+        if (file != null) {
+          print(file!.path);
+        }
+        print("File name: $fileName");
+        print('pickand uploadFile called');
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(status),
+        ),
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -244,7 +297,7 @@ class _TodoListPageState extends State<TodoListPage> {
     };
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      //padding: const EdgeInsets.only(top: 2),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -254,20 +307,29 @@ class _TodoListPageState extends State<TodoListPage> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(8),
               child: Column(
                 children: [
+                  const SizedBox(height: 15),
                   const Text(
                     "📋 Add New Task",
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _controller,
-                    decoration: const InputDecoration(
-                      labelText: 'Task Title',
-                      prefixIcon: Icon(Icons.task_alt),
-                      border: OutlineInputBorder(),
+                  const SizedBox(height: 20),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      print('button pressed');
+                      await pickAndUploadFile();
+                      print("object");
+                    },
+                    icon: const Icon(Icons.login),
+                    label: const Text('Upload Assignment File'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      minimumSize: const Size.fromHeight(50),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -311,12 +373,10 @@ class _TodoListPageState extends State<TodoListPage> {
                         border: OutlineInputBorder(),
                       ),
                     ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   ElevatedButton.icon(
                     onPressed: () async {
-                      if (_controller.text.isEmpty ||
-                          _selectedDay == null ||
-                          _selectedAssignment == null) {
+                      if (_selectedDay == null || _selectedAssignment == null) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('⚠ Please fill all fields.'),
@@ -324,8 +384,7 @@ class _TodoListPageState extends State<TodoListPage> {
                         );
                       } else {
                         {
-                          if (_controller.text.isNotEmpty &&
-                              _selectedDay != null &&
+                          if (_selectedDay != null &&
                               _selectedAssignment != null) {
                             setState(() {
                               isLoading = true;
@@ -333,6 +392,50 @@ class _TodoListPageState extends State<TodoListPage> {
                             });
 
                             try {
+                              if ((kIsWeb && fileBytes == null) ||
+                                  (!kIsWeb &&
+                                      (file == null || file!.path.isEmpty))) {
+                                print('Exited');
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text(
+                                          '⚠ Please upload a file before adding a task.')),
+                                );
+                                return;
+                              } else {
+                                if (kIsWeb) {
+                                  print("File bytes.....: $fileBytes");
+                                  var request = http.MultipartRequest(
+                                    'POST',
+                                    Uri.parse(
+                                        'http://127.0.0.1:8000/uploadfiletos3/'),
+                                  );
+                                  request.files
+                                      .add(http.MultipartFile.fromBytes(
+                                    'file',
+                                    fileBytes!,
+                                    filename: fileName,
+                                  ));
+                                  var response = await request.send();
+                                  print(response.statusCode);
+                                  print('File name: $fileName');
+                                } else {
+                                  var request = http.MultipartRequest(
+                                    'POST',
+                                    Uri.parse(
+                                        'http://127.0.0.1:8000/uploadfiletos3/'),
+                                  );
+                                  request.files
+                                      .add(await http.MultipartFile.fromPath(
+                                    'file',
+                                    file!.path,
+                                    filename: fileName,
+                                  ));
+                                  print(
+                                      'File path: ${file!.path}, File name: $fileName');
+                                  // var response = await request.send();
+                                }
+                              }
                               final response = await http.post(
                                 Uri.parse(
                                     'https://8671a5f8-6323-4a16-9356-a2dd53e7078c-00-2m041txxfet0b.pike.replit.dev/send/'),
@@ -340,7 +443,8 @@ class _TodoListPageState extends State<TodoListPage> {
                                   'userid': Provider.of<resource>(context,
                                           listen: false)
                                       .PresentWorkingUser,
-                                  'userdata': _controller.text.trim(),
+                                  'userdata':
+                                      "${Provider.of<resource>(context, listen: false).PresentWorkingUser}  $fileName",
                                   'days': _selectedDay?.trim() ?? '',
                                   'assignments':
                                       _selectedAssignment?.trim() ?? '',
@@ -407,11 +511,12 @@ class _TodoListPageState extends State<TodoListPage> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 20),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
           if (_todos.isNotEmpty)
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -460,7 +565,7 @@ class _TodoListPageState extends State<TodoListPage> {
     };
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      // padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -690,83 +795,83 @@ class _TodoListPageState extends State<TodoListPage> {
           ),
         ),
 
-        // Filter tabs
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children:
-                ['All', 'Completed', 'Pending'].asMap().entries.map((entry) {
-              return ChoiceChip(
-                label: Text(entry.value),
-                selected: _selectedTabIndex == entry.key,
-                onSelected: (_) {
-                  setState(() {
-                    _selectedTabIndex = entry.key;
-                  });
-                },
-              );
-            }).toList(),
-          ),
-        ),
+        // // Filter tabs
+        // Padding(
+        //   padding: const EdgeInsets.symmetric(horizontal: 16),
+        //   child: Row(
+        //     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        //     children:
+        //         ['All', 'Completed', 'Pending'].asMap().entries.map((entry) {
+        //       return ChoiceChip(
+        //         label: Text(entry.value),
+        //         selected: _selectedTabIndex == entry.key,
+        //         onSelected: (_) {
+        //           setState(() {
+        //             _selectedTabIndex = entry.key;
+        //           });
+        //         },
+        //       );
+        //     }).toList(),
+        //   ),
+        // ),
 
-        const SizedBox(height: 12),
+        // const SizedBox(height: 12),
 
-        // Date Range Filter
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () async {
-                    DateTime? picked = await showDatePicker(
-                      context: context,
-                      initialDate: DateTime.now(),
-                      firstDate: DateTime(2022),
-                      lastDate: DateTime.now(),
-                    );
-                    if (picked != null) {
-                      setState(() {
-                        _startDate = picked;
-                      });
-                    }
-                  },
-                  icon: const Icon(Icons.calendar_today),
-                  label: Text(
-                    _startDate == null
-                        ? 'Start Date'
-                        : 'From: ${DateFormat.yMMMd().format(_startDate!)}',
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () async {
-                    DateTime? picked = await showDatePicker(
-                      context: context,
-                      initialDate: DateTime.now(),
-                      firstDate: DateTime(2022),
-                      lastDate: DateTime.now(),
-                    );
-                    if (picked != null) {
-                      setState(() {
-                        _endDate = picked;
-                      });
-                    }
-                  },
-                  icon: const Icon(Icons.calendar_month),
-                  label: Text(
-                    _endDate == null
-                        ? 'End Date'
-                        : 'To: ${DateFormat.yMMMd().format(_endDate!)}',
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+        // // Date Range Filter
+        // Padding(
+        //   padding: const EdgeInsets.symmetric(horizontal: 16),
+        //   child: Row(
+        //     children: [
+        //       Expanded(
+        //         child: ElevatedButton.icon(
+        //           onPressed: () async {
+        //             DateTime? picked = await showDatePicker(
+        //               context: context,
+        //               initialDate: DateTime.now(),
+        //               firstDate: DateTime(2022),
+        //               lastDate: DateTime.now(),
+        //             );
+        //             if (picked != null) {
+        //               setState(() {
+        //                 _startDate = picked;
+        //               });
+        //             }
+        //           },
+        //           icon: const Icon(Icons.calendar_today),
+        //           label: Text(
+        //             _startDate == null
+        //                 ? 'Start Date'
+        //                 : 'From: ${DateFormat.yMMMd().format(_startDate!)}',
+        //           ),
+        //         ),
+        //       ),
+        //       const SizedBox(width: 10),
+        //       Expanded(
+        //         child: ElevatedButton.icon(
+        //           onPressed: () async {
+        //             DateTime? picked = await showDatePicker(
+        //               context: context,
+        //               initialDate: DateTime.now(),
+        //               firstDate: DateTime(2022),
+        //               lastDate: DateTime.now(),
+        //             );
+        //             if (picked != null) {
+        //               setState(() {
+        //                 _endDate = picked;
+        //               });
+        //             }
+        //           },
+        //           icon: const Icon(Icons.calendar_month),
+        //           label: Text(
+        //             _endDate == null
+        //                 ? 'End Date'
+        //                 : 'To: ${DateFormat.yMMMd().format(_endDate!)}',
+        //           ),
+        //         ),
+        //       ),
+        //     ],
+        //   ),
+        // ),
 
         const SizedBox(height: 12),
 
@@ -1062,7 +1167,7 @@ class _TodoListPageState extends State<TodoListPage> {
                                         mainAxisSize: MainAxisSize.min,
                                         children: todos.map((todo) {
                                           return ListTile(
-                                            title: Text(todo.days),
+                                            title: Text(todo.description),
                                           );
                                         }).toList(),
                                       ),
@@ -1119,11 +1224,12 @@ class _TodoListPageState extends State<TodoListPage> {
 
   @override
   Widget build(BuildContext context) {
+    String User = "kalyan";
     Widget currentBody;
     print("here exists");
     if (_selectedIndex == 0) {
       if (Provider.of<resource>(context, listen: false).PresentWorkingUser ==
-          'mahesh') {
+          User) {
         currentBody = _buildChatsView2();
         debugPrint(
             'Entered inthisstatement $Provider.of<resource>(context, listen: false).PresentWorkingUser;');
@@ -1136,7 +1242,7 @@ class _TodoListPageState extends State<TodoListPage> {
       }
     } else if (_selectedIndex == 1) {
       if (Provider.of<resource>(context, listen: false).PresentWorkingUser ==
-          'mahesh') {
+          User) {
         currentBody = _buildStatusView2();
         debugPrint(
             'Entered inthisstatement $Provider.of<resource>(context, listen: false).PresentWorkingUser;');
@@ -1149,7 +1255,7 @@ class _TodoListPageState extends State<TodoListPage> {
       }
     } else if (Provider.of<resource>(context, listen: false)
             .PresentWorkingUser ==
-        'mahesh') {
+        User) {
       currentBody = _buildCallsView2();
     } else {
       currentBody = _buildCallsView();
@@ -1165,10 +1271,49 @@ class _TodoListPageState extends State<TodoListPage> {
               children: [
                 UserAccountsDrawerHeader(
                   accountName: Text(presentUser),
-                  accountEmail: const Text("Administrator"),
+                  accountEmail: (presentUser == User)
+                      ? Text("Administrator")
+                      : Text("Student"),
                   currentAccountPicture: const CircleAvatar(
                     backgroundImage: AssetImage('assets/imgicon1.png'),
                   ),
+                  decoration: BoxDecoration(
+                    color: (presentUser == User)
+                        ? Colors.blue
+                        : Colors.orangeAccent,
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.person),
+                  title: const Text("Profile"),
+                  onTap: () {
+                    print("Profile tapped");
+                    Navigator.pop(context); // Close the drawer
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.help),
+                  title: const Text("Help"),
+                  onTap: () {
+                    print("Help tapped");
+                    Navigator.pop(context); // Close the drawer
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.contact_emergency),
+                  title: const Text("Raise Query"),
+                  onTap: () {
+                    print("Info tapped");
+                    Navigator.pop(context); // Close the drawer
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.settings),
+                  title: const Text("Settings"),
+                  onTap: () {
+                    print("Settings tapped");
+                    Navigator.pop(context); // Close the drawer
+                  },
                 ),
               ],
             ),
@@ -1176,8 +1321,9 @@ class _TodoListPageState extends State<TodoListPage> {
         },
       ),
       appBar: AppBar(
-        title: const Text('My Todo List'),
+        title: const Text('Assignments Board'),
         backgroundColor: Colors.green,
+        centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.menu),
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
@@ -1215,16 +1361,18 @@ class _TodoListPageState extends State<TodoListPage> {
           ),
         ],
       ),
-      body: Padding(padding: const EdgeInsets.all(16.0), child: currentBody),
+      body: Padding(padding: const EdgeInsets.all(6.0), child: currentBody),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) => setState(() => _selectedIndex = index),
-        selectedItemColor: Colors.green,
+        selectedItemColor: const Color.fromARGB(255, 60, 209, 65),
         unselectedItemColor: Colors.grey,
+        backgroundColor: const Color.fromARGB(255, 187, 202, 231),
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Chats'),
-          BottomNavigationBarItem(icon: Icon(Icons.update), label: 'Status'),
-          BottomNavigationBarItem(icon: Icon(Icons.call), label: 'Calls'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.library_add), label: 'Add Task'),
+          BottomNavigationBarItem(icon: Icon(Icons.task_alt), label: 'Status'),
+          BottomNavigationBarItem(icon: Icon(Icons.task), label: 'Total'),
         ],
       ),
     );

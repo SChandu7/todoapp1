@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class resource with ChangeNotifier {
-  String PresentWorkingUser = 'admin';
+  String PresentWorkingUser = 'defaultUser';
 
   void setLoginDetails(String user) {
     PresentWorkingUser = user;
