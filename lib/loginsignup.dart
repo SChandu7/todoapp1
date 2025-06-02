@@ -1,11 +1,12 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_keyboard_visibility/flutter_keyboard_visibility.dart';
-import 'package:todoapp/resource.dart';
-import 'package:todoapp/main.dart';
-
+import 'resource.dart';
+import 'main.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:awesome_dialog/awesome_dialog.dart';
@@ -140,53 +141,24 @@ class _LoginPageState extends State<LoginPage> {
   String error = '';
   bool isLoading = false;
 
-  Future<void> login() async {
-    setState(() {
-      isLoading = true;
-      error = '';
-    });
+  Future<String?> fetchUserProfileImageUrl(String username) async {
+    const imageBaseUrl = 'https://djangotestcase.s3.ap-south-1.amazonaws.com/';
 
-    try {
-      final response = await http.post(
-        Uri.parse('http://127.0.0.1:8000/login/'),
-        body: {
-          'username': _GetUsername.text,
-          'password': _GetUserPassword.text,
-        },
-      );
+    // Try extensions in order
+    final extensions = ['jpg', 'jpeg', 'png'];
 
-      debugPrint('Response code: ${response.statusCode}');
-      debugPrint('Response body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        Provider.of<resource>(
-          context,
-          listen: false,
-        ).setLoginDetails(_GetUsername.text);
-
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => TodoListPage()),
-        );
-        showDialog(
-          context: context,
-          builder: (_) => const AlertDialog(
-            title: Text('Login Success'),
-            content: Text("You have successfully logged in."),
-          ),
-        );
-      } else {
-        setState(() => error = 'Invalid credentials or server error.');
+    for (String ext in extensions) {
+      final imageUrl = '$imageBaseUrl${username}profile.$ext';
+      try {
+        final response = await http.get(Uri.parse(imageUrl));
+        if (response.statusCode == 200) {
+          return imageUrl;
+        }
+      } catch (_) {
+        // Continue checking other extensions
       }
-    } catch (e) {
-      setState(() => error = 'Network error: $e');
-      debugPrint('Login error: $e');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Login failed: $e')));
-    } finally {
-      setState(() => isLoading = false);
     }
+    return null; // No valid image found
   }
 
   @override
@@ -399,7 +371,7 @@ class _LoginPageState extends State<LoginPage> {
                                     try {
                                       final response = await http.post(
                                         Uri.parse(
-                                            'https://8671a5f8-6323-4a16-9356-a2dd53e7078c-00-2m041txxfet0b.pike.replit.dev/login/'),
+                                            'https://8671a5f8-6323-4a16-9356-a2dd53e7078c-00-2m041txxfet0b.pike.replit.dev/assignmentslogin/'),
                                         body: {
                                           'username': _GetUsername.text.trim(),
                                           'password':
@@ -413,19 +385,63 @@ class _LoginPageState extends State<LoginPage> {
                                           'Response body: ${response.body}');
 
                                       if (response.statusCode == 200) {
-                                        // Save username using Provider
+                                        final username =
+                                            _GetUsername.text.trim();
+                                        Provider.of<resource>(context,
+                                                listen: false)
+                                            .setLoginDetails(username);
+
+                                        final userImageUrl =
+                                            await fetchUserProfileImageUrl(
+                                                username);
+
+                                        bool _navigated = false;
+
+                                        // Automatically navigate after 3 seconds
+                                        Future.delayed(
+                                            const Duration(seconds: 2), () {
+                                          if (!_navigated && context.mounted) {
+                                            Navigator.pushReplacement(
+                                              context,
+                                              MaterialPageRoute(
+                                                  builder: (context) =>
+                                                      TodoListPage()),
+                                            );
+                                          }
+                                        });
 
                                         AwesomeDialog(
                                           context: context,
                                           dialogType: DialogType.success,
                                           animType: AnimType.bottomSlide,
-                                          title:
-                                              'Welcome ${_GetUsername.text.trim()}',
+                                          title: 'Welcome $username',
                                           desc:
                                               'You have successfully logged in.',
+                                          body: Column(
+                                            children: [
+                                              if (userImageUrl != null)
+                                                CircleAvatar(
+                                                  radius: 40,
+                                                  backgroundImage: NetworkImage(
+                                                      userImageUrl),
+                                                )
+                                              else
+                                                const Icon(Icons.account_circle,
+                                                    size: 60,
+                                                    color: Colors.grey),
+                                              const SizedBox(height: 10),
+                                              Text(
+                                                'Welcome $username!',
+                                                style: const TextStyle(
+                                                    fontWeight:
+                                                        FontWeight.bold),
+                                              ),
+                                            ],
+                                          ),
                                           btnOkText: 'Continue',
                                           btnOkOnPress: () {
-                                            Navigator.push(
+                                            _navigated = true;
+                                            Navigator.pushReplacement(
                                               context,
                                               MaterialPageRoute(
                                                   builder: (context) =>
@@ -433,29 +449,24 @@ class _LoginPageState extends State<LoginPage> {
                                             );
                                           },
                                         ).show();
-
-                                        await Future.delayed(
-                                            const Duration(seconds: 2));
-
-                                        // Navigate to the TodoListPage
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                              builder: (context) =>
-                                                  TodoListPage()),
-                                        );
-
-                                        // Show success dialog
                                       } else {
                                         setState(() {
-                                          error =
-                                              'Invalid credentials or server error.';
+                                          error = (response.statusCode == 403)
+                                              ? 'Admin Approval Required !'
+                                              : 'Invalid credentials .';
                                           showDialog(
                                             context: context,
-                                            builder: (_) => const AlertDialog(
-                                              title: Text('Wrong  credentials'),
-                                              content: Text(
-                                                  "Please Enter valid credentials."),
+                                            builder: (_) => AlertDialog(
+                                              title: Text((response
+                                                          .statusCode ==
+                                                      403)
+                                                  ? 'Admin Approval Required !'
+                                                  : 'Invalid credentials.'),
+                                              content: Text((response
+                                                          .statusCode ==
+                                                      403)
+                                                  ? 'Please wait for admin approval.'
+                                                  : 'Please Enter Correct Information.'),
                                             ),
                                           );
                                         });
@@ -599,12 +610,60 @@ class _SignUpPageState extends State<SignUpPage> {
   final ImagePicker _imagePicker = ImagePicker();
   XFile? _selectedImage;
 
-  String _selectedGender = "Select Gender";
   String _selectedRole = "Select Role";
-  final TextEditingController _GetUsername = TextEditingController();
   final TextEditingController _GetUserPassword = TextEditingController();
+  final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _mobileController = TextEditingController();
+  final TextEditingController _collegeController = TextEditingController();
+  final TextEditingController _fieldController = TextEditingController();
+  final TextEditingController _roleController = TextEditingController();
+  final TextEditingController _addressController = TextEditingController();
+  final TextEditingController _keyController = TextEditingController();
   String error = '';
   bool isLoading = false;
+  Uint8List? _webImageBytes;
+
+  Future<void> uploadImage(XFile image, BuildContext context) async {
+    final fileName = "${_usernameController.text.trim()}profile.jpg"; // ✅
+
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse(
+          'https://8671a5f8-6323-4a16-9356-a2dd53e7078c-00-2m041txxfet0b.pike.replit.dev/uploadfiletos3/'),
+    );
+
+    if (kIsWeb) {
+      _webImageBytes = await image.readAsBytes();
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          _webImageBytes!,
+          filename: fileName,
+        ),
+      );
+    } else {
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'file',
+          image.path,
+          filename: fileName,
+        ),
+      );
+    }
+
+    try {
+      final response = await request.send();
+      if (response.statusCode == 200) {
+        debugPrint('✅ Image uploaded successfully!');
+      } else {
+        debugPrint('❌ Failed to upload image: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('❌ Error uploading image: $e');
+    }
+
+    setState(() {}); // Refresh UI
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -653,30 +712,24 @@ class _SignUpPageState extends State<SignUpPage> {
                       child: GestureDetector(
                         onTap: () async {
                           final image = await _imagePicker.pickImage(
-                            source: ImageSource.gallery,
-                          );
-                          setState(() {});
-                          BufferPopup bufferPopup = BufferPopup();
-                          bufferPopup.showBufferPopup(
-                            context,
-                            "Uploading..",
-                            "please wait",
-                            "Uploaded Complete",
-                          );
-
-                          // Perform your image upload or processing logic here
-                          await Future.delayed(Duration(seconds: 1));
+                              source: ImageSource.gallery);
                           if (image != null) {
                             setState(() {
                               _selectedImage = image;
                             });
+                            await uploadImage(image,
+                                context); // ✅ upload immediately after selection
                           }
                         },
                         child: CircleAvatar(
                           radius: 40,
                           backgroundColor: Colors.white,
                           backgroundImage: _selectedImage != null
-                              ? FileImage(File(_selectedImage!.path))
+                              ? (kIsWeb
+                                  ? (_webImageBytes != null
+                                      ? MemoryImage(_webImageBytes!)
+                                      : null)
+                                  : FileImage(File(_selectedImage!.path)))
                               : null,
                           child: _selectedImage == null
                               ? const Icon(
@@ -687,7 +740,7 @@ class _SignUpPageState extends State<SignUpPage> {
                               : null,
                         ),
                       ),
-                    ),
+                    )
                   ],
                 ),
               ),
@@ -706,11 +759,13 @@ class _SignUpPageState extends State<SignUpPage> {
                     children: [
                       const SizedBox(height: 20),
                       _buildInputField(
-                        hintText: "Full Name",
-                        icon: Icons.person,
+                        controller: _usernameController,
+                        hintText: "Username",
+                        icon: Icons.verified_user,
                       ),
                       const SizedBox(height: 15),
                       _buildInputField(
+                        controller: _mobileController,
                         hintText: "Mobile Number",
                         icon: Icons.phone,
                         inputType: TextInputType.phone,
@@ -718,21 +773,9 @@ class _SignUpPageState extends State<SignUpPage> {
                       const SizedBox(height: 15),
                       _buildDropdownField(
                         context,
-                        title: _selectedGender,
-                        icon: Icons.person_outline,
-                        items: ["Male", "Female", "Other"],
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedGender = value!;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 15),
-                      _buildDropdownField(
-                        context,
                         title: _selectedRole,
                         icon: Icons.people_outline,
-                        items: ["Student", "Staff", "Admin"],
+                        items: ["Student", "Admin", "Default"],
                         onChanged: (value) {
                           setState(() {
                             _selectedRole = value!;
@@ -740,17 +783,45 @@ class _SignUpPageState extends State<SignUpPage> {
                         },
                       ),
                       const SizedBox(height: 15),
-                      _buildInputField(hintText: "Address", icon: Icons.home),
-                      const SizedBox(height: 15),
+                      if (_selectedRole == "Student") ...[
+                        _buildInputField(
+                          controller: _collegeController,
+                          hintText: "College Name",
+                          icon: Icons.school,
+                        ),
+                        const SizedBox(height: 15),
+                        _buildInputField(
+                          controller: _fieldController,
+                          hintText: "Field of Study",
+                          icon: Icons.badge,
+                        ),
+                        const SizedBox(height: 15),
+                      ],
+                      if (_selectedRole == "Admin") ...[
+                        _buildInputField(
+                          controller: _roleController,
+                          hintText: "Role",
+                          icon: Icons.business,
+                        ),
+                        const SizedBox(height: 15),
+                        _buildInputField(
+                          controller: _keyController,
+                          hintText: "Pass_Key",
+                          icon: Icons.key,
+                        ),
+                        const SizedBox(height: 15),
+                      ],
                       _buildInputField(
-                        hintText: "Username",
-                        icon: Icons.verified_user,
+                        controller: _addressController,
+                        hintText: "Address",
+                        icon: Icons.home,
                       ),
                       FadeInDown(
                         duration: const Duration(milliseconds: 600),
                         child: const SizedBox(height: 15),
                       ),
                       _buildInputField(
+                        controller: _GetUserPassword,
                         hintText: "Password",
                         icon: Icons.lock,
                         obscureText: true,
@@ -760,19 +831,52 @@ class _SignUpPageState extends State<SignUpPage> {
                         duration: const Duration(milliseconds: 700),
                         child: MaterialButton(
                           onPressed: () async {
-                            // Validate the username and password
+                            // Validate all required fields
+                            if (_usernameController.text.trim().isEmpty ||
+                                _mobileController.text.trim().isEmpty ||
+                                _selectedRole == "Select Role" ||
+                                _addressController.text.trim().isEmpty ||
+                                _GetUserPassword.text.trim().isEmpty ||
+                                (_selectedRole == "Student" &&
+                                    (_collegeController.text.trim().isEmpty ||
+                                        _fieldController.text
+                                            .trim()
+                                            .isEmpty)) ||
+                                (_selectedRole == "Admin" &&
+                                    (_roleController.text.trim().isEmpty ||
+                                        _keyController.text.trim().isEmpty)) ||
+                                _selectedImage == null) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text(
+                                        "⚠ Please fill all fields and upload an image")),
+                              );
+                              return;
+                            }
 
                             setState(() {
                               isLoading = true;
                               error = '';
                             });
 
+                            // ✅ Upload the image
+                            await uploadImage(_selectedImage!, context);
+
                             try {
                               final response = await http.post(
                                 Uri.parse(
-                                    'https://8671a5f8-6323-4a16-9356-a2dd53e7078c-00-2m041txxfet0b.pike.replit.dev/signup/'),
+                                    'https://8671a5f8-6323-4a16-9356-a2dd53e7078c-00-2m041txxfet0b.pike.replit.dev/assignmentssignup/'),
                                 body: {
-                                  'username': _GetUsername.text.trim(),
+                                  'username': _usernameController.text.trim(),
+                                  'mobilenumber': _mobileController.text.trim(),
+                                  'user': _selectedRole,
+                                  'college_role': (_selectedRole == "Student")
+                                      ? _collegeController.text.trim()
+                                      : _roleController.text.trim(),
+                                  'feild_key': (_selectedRole == "Student")
+                                      ? _fieldController.text.trim()
+                                      : _keyController.text.trim(),
+                                  'address': _addressController.text.trim(),
                                   'password': _GetUserPassword.text.trim(),
                                 },
                               );
@@ -783,29 +887,25 @@ class _SignUpPageState extends State<SignUpPage> {
 
                               if (response.statusCode == 200) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
+                                  const SnackBar(
                                       content: Text(
-                                          'Signup Succesfull: Please Login....')),
+                                          '✅ Signup Successful! Please login.')),
                                 );
                                 await Future.delayed(
                                     const Duration(seconds: 1));
-
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                      builder: (context) => LoginPage()),
+                                      builder: (context) => const LoginPage()),
                                 );
-
-                                // Show success dialog
                               } else {
                                 setState(() {
                                   error = 'userAlreadyExists or server error.';
                                   showDialog(
                                     context: context,
                                     builder: (_) => const AlertDialog(
-                                      title: Text('Wrong  credentials'),
-                                      content: Text(
-                                          "Please Enter valid credentials."),
+                                      title: Text('Invalid Credentials'),
+                                      content: Text("Please enter valid data."),
                                     ),
                                   );
                                 });
@@ -814,9 +914,9 @@ class _SignUpPageState extends State<SignUpPage> {
                               setState(() {
                                 error = 'Network error: $e';
                               });
-                              debugPrint('Login error: $e');
+                              debugPrint('Signup error: $e');
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Login failed: $e')),
+                                SnackBar(content: Text('Signup failed: $e')),
                               );
                             } finally {
                               setState(() {
@@ -852,6 +952,7 @@ class _SignUpPageState extends State<SignUpPage> {
   }
 
   Widget _buildInputField({
+    required TextEditingController controller,
     required String hintText,
     required IconData icon,
     bool obscureText = false,
@@ -872,8 +973,7 @@ class _SignUpPageState extends State<SignUpPage> {
           ],
         ),
         child: TextField(
-          controller:
-              ('Username' == hintText) ? _GetUsername : _GetUserPassword,
+          controller: controller,
           obscureText: obscureText,
           keyboardType: inputType,
           decoration: InputDecoration(

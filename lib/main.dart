@@ -9,6 +9,9 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:open_filex/open_filex.dart'; // Add this import
+import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 void main() {
   runApp(
@@ -163,11 +166,17 @@ class _TodoListPageState extends State<TodoListPage> {
   List<Todo3> _todos3 = [];
   bool _isLoading2 = true;
   bool _isLoading3 = true;
+  bool isLoading4 = true;
   String status = '';
   Uint8List? fileBytes;
   String? fileName;
   File? file;
   String? fileName2;
+  var fileresponse;
+  List<String> pdfUrls = [];
+  List<String> javaUrls = [];
+  List<dynamic> _users = [];
+  bool _isLoadingUsers = true;
 
   void _deleteTodo(int index) {
     setState(() {
@@ -179,6 +188,24 @@ class _TodoListPageState extends State<TodoListPage> {
     setState(() {
       _todos[index].isCompleted = !_todos[index].isCompleted;
     });
+  }
+
+  Future<String?> fetchUserProfileImageUrl(String username) async {
+    const baseUrl = 'https://djangotestcase.s3.ap-south-1.amazonaws.com/';
+    final extensions = ['jpg', 'jpeg', 'png'];
+
+    for (String ext in extensions) {
+      final url = '$baseUrl${username}profile.$ext';
+      try {
+        final response = await http.head(Uri.parse(url));
+        if (response.statusCode == 200) {
+          return url;
+        }
+      } catch (_) {
+        // continue trying other extensions
+      }
+    }
+    return null;
   }
 
   Future<void> fetchTodosFromAPI() async {
@@ -282,9 +309,122 @@ class _TodoListPageState extends State<TodoListPage> {
     }
   }
 
+  Future<void> fetchPdfUrls() async {
+    final response = await http.get(Uri.parse(
+        'https://8671a5f8-6323-4a16-9356-a2dd53e7078c-00-2m041txxfet0b.pike.replit.dev/receivefilesfroms3/'));
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      List<String> allFiles = List<String>.from(data['files']);
+      List<String> onlyPdfs =
+          allFiles.where((url) => url.toLowerCase().endsWith('.pdf')).toList();
+      List<String> onlyjava =
+          allFiles.where((url) => url.toLowerCase().endsWith('.java')).toList();
+
+      setState(() {
+        pdfUrls = onlyPdfs;
+        javaUrls = onlyjava;
+        isLoading4 = false;
+      });
+    } else {
+      setState(() => isLoading4 = false);
+      print("Failed to fetch files");
+    }
+  }
+
+  Future<void> _viewPdfInApp(String url) async {
+    print("total urls.................: $pdfUrls");
+    print("viewPdfInApp called with URL.................: $url");
+    print("file name: ${url.split('/').last}");
+    final filename = url.split('/').last;
+
+    if (kIsWeb) {
+      final pdfUrl = url.replaceAll(" ", "");
+      if (await canLaunchUrl(Uri.parse(
+          "https://djangotestcase.s3.ap-south-1.amazonaws.com/" + pdfUrl))) {
+        await launchUrl(
+            Uri.parse(
+                "https://djangotestcase.s3.ap-south-1.amazonaws.com/" + pdfUrl),
+            mode: LaunchMode.externalApplication);
+      } else {
+        print("Could not launch $pdfUrl");
+      }
+      return;
+    }
+    final dir =
+        await getApplicationDocumentsDirectory(); // Only for mobile/desktop
+
+    final filePath = '${dir.path}/$filename';
+    final file = File(filePath);
+
+    // Download if not already present
+    if (!await file.exists()) {
+      final response = await http.get(Uri.parse(
+          "https://djangotestcase.s3.ap-south-1.amazonaws.com/${url.replaceAll(" ", "")}"));
+      // ignore: avoid_print
+      print(
+          "https://djangotestcase.s3.ap-south-1.amazonaws.com/${url.replaceAll(" ", "")}");
+
+      if (response.statusCode == 200) {
+        await file.writeAsBytes(response.bodyBytes);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to download PDF")),
+        );
+        return;
+      }
+    }
+
+    // Open with external PDF viewer app
+    final result = await OpenFilex.open(file.path);
+
+    if (result.type != ResultType.done) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Could not open PDF with external app")),
+      );
+    }
+  }
+
+  Future<void> fetchAllUsers() async {
+    final response = await http.get(
+      Uri.parse(
+          'https://8671a5f8-6323-4a16-9356-a2dd53e7078c-00-2m041txxfet0b.pike.replit.dev/getallusers/'),
+    );
+    if (response.statusCode == 200) {
+      setState(() {
+        _users = jsonDecode(response.body);
+        _isLoadingUsers = false;
+      });
+    } else {
+      print('Failed to fetch users');
+    }
+  }
+
+  Future<void> updateUserApproval(String username, bool approval) async {
+    final response = await http.post(
+      Uri.parse(
+          'https://8671a5f8-6323-4a16-9356-a2dd53e7078c-00-2m041txxfet0b.pike.replit.dev/updateapproval/'),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({"username": username, "approval": approval}),
+    );
+
+    if (response.statusCode == 200) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Approval updated for $username')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update approval')),
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    fetchPdfUrls();
+    fetchAllUsers();
+    fetchTodosFromAPI();
     fetchTodosFromAPI2();
     fetchTodosFromAPI3();
   }
@@ -408,32 +548,34 @@ class _TodoListPageState extends State<TodoListPage> {
                                   var request = http.MultipartRequest(
                                     'POST',
                                     Uri.parse(
-                                        'http://127.0.0.1:8000/uploadfiletos3/'),
+                                        'https://8671a5f8-6323-4a16-9356-a2dd53e7078c-00-2m041txxfet0b.pike.replit.dev/uploadfiletos3/'),
                                   );
                                   request.files
                                       .add(http.MultipartFile.fromBytes(
                                     'file',
                                     fileBytes!,
-                                    filename: fileName,
+                                    filename:
+                                        "${Provider.of<resource>(context, listen: false).PresentWorkingUser}${fileName!}",
                                   ));
-                                  var response = await request.send();
-                                  print(response.statusCode);
+                                  fileresponse = await request.send();
+                                  print(fileresponse.statusCode);
                                   print('File name: $fileName');
                                 } else {
                                   var request = http.MultipartRequest(
                                     'POST',
                                     Uri.parse(
-                                        'http://127.0.0.1:8000/uploadfiletos3/'),
+                                        'https://8671a5f8-6323-4a16-9356-a2dd53e7078c-00-2m041txxfet0b.pike.replit.dev/uploadfiletos3/'),
                                   );
                                   request.files
                                       .add(await http.MultipartFile.fromPath(
                                     'file',
                                     file!.path,
-                                    filename: fileName,
+                                    filename:
+                                        "${Provider.of<resource>(context, listen: false).PresentWorkingUser}${fileName!}",
                                   ));
                                   print(
                                       'File path: ${file!.path}, File name: $fileName');
-                                  // var response = await request.send();
+                                  fileresponse = await request.send();
                                 }
                               }
                               final response = await http.post(
@@ -1039,8 +1181,20 @@ class _TodoListPageState extends State<TodoListPage> {
                                         mainAxisSize: MainAxisSize.min,
                                         children: todos.map((todo) {
                                           return ListTile(
-                                            title: Text(todo.userdata),
-                                          );
+                                              title: InkWell(
+                                            onTap: () {
+                                              print(
+                                                  "User data: ${todo.userdata}");
+                                              _viewPdfInApp(todo.userdata);
+
+                                              print(
+                                                  "hello.......................................");
+                                            },
+                                            child: Text(todo.userdata
+                                                .split(' ')
+                                                .skip(1)
+                                                .join(' ')),
+                                          ));
                                         }).toList(),
                                       ),
                                       actions: [
@@ -1196,9 +1350,15 @@ class _TodoListPageState extends State<TodoListPage> {
   }
 
   Widget _buildCallsView2() {
+    final filteredUsers = _users.where((user) {
+      return user['username']
+          .toString()
+          .toLowerCase()
+          .contains(_searchQuery.toLowerCase());
+    }).toList();
+
     return Column(
       children: [
-        // Search bar
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: TextField(
@@ -1214,10 +1374,55 @@ class _TodoListPageState extends State<TodoListPage> {
             },
           ),
         ),
+        Expanded(
+          child: _isLoadingUsers
+              ? const Center(child: CircularProgressIndicator())
+              : ListView.builder(
+                  itemCount: filteredUsers.length,
+                  itemBuilder: (context, index) {
+                    final user = filteredUsers[index];
+                    final username = user['username'] ?? 'Unknown';
 
-        const SizedBox(height: 12),
+                    return FutureBuilder<String?>(
+                      future: fetchUserProfileImageUrl(username),
+                      builder: (context, snapshot) {
+                        Widget avatar;
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          avatar =
+                              const CircleAvatar(child: Icon(Icons.person));
+                        } else if (snapshot.hasData && snapshot.data != null) {
+                          avatar = CircleAvatar(
+                            backgroundImage: NetworkImage(snapshot.data!),
+                          );
+                        } else {
+                          avatar =
+                              const CircleAvatar(child: Icon(Icons.person));
+                        }
 
-        // Day Cards
+                        return Card(
+                          margin: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          child: ListTile(
+                            leading: avatar,
+                            title: Text(username),
+                            subtitle: Text("Approval: ${user['approval']}"),
+                            trailing: Switch(
+                              value: user['approval'] == true,
+                              onChanged: (value) async {
+                                setState(() {
+                                  user['approval'] = value;
+                                });
+                                await updateUserApproval(username, value);
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+        ),
       ],
     );
   }
@@ -1226,18 +1431,15 @@ class _TodoListPageState extends State<TodoListPage> {
   Widget build(BuildContext context) {
     String User = "kalyan";
     Widget currentBody;
-    print("here exists");
     if (_selectedIndex == 0) {
       if (Provider.of<resource>(context, listen: false).PresentWorkingUser ==
           User) {
         currentBody = _buildChatsView2();
         debugPrint(
             'Entered inthisstatement $Provider.of<resource>(context, listen: false).PresentWorkingUser;');
-        print("enterednin");
       } else {
         currentBody = _buildChatsView();
 
-        print(resource().PresentWorkingUser);
         debugPrint(presentUser.toString());
       }
     } else if (_selectedIndex == 1) {
@@ -1246,11 +1448,9 @@ class _TodoListPageState extends State<TodoListPage> {
         currentBody = _buildStatusView2();
         debugPrint(
             'Entered inthisstatement $Provider.of<resource>(context, listen: false).PresentWorkingUser;');
-        print("enterednin");
       } else {
         currentBody = _buildStatusView();
 
-        print(resource().PresentWorkingUser);
         debugPrint(presentUser.toString());
       }
     } else if (Provider.of<resource>(context, listen: false)
@@ -1274,8 +1474,23 @@ class _TodoListPageState extends State<TodoListPage> {
                   accountEmail: (presentUser == User)
                       ? Text("Administrator")
                       : Text("Student"),
-                  currentAccountPicture: const CircleAvatar(
-                    backgroundImage: AssetImage('assets/imgicon1.png'),
+                  currentAccountPicture: FutureBuilder<String?>(
+                    future: fetchUserProfileImageUrl(presentUser),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const CircleAvatar(
+                            child: CircularProgressIndicator());
+                      } else if (snapshot.hasData && snapshot.data != null) {
+                        return CircleAvatar(
+                          backgroundImage: NetworkImage(snapshot.data!),
+                        );
+                      } else {
+                        return const CircleAvatar(
+                          backgroundImage:
+                              AssetImage('assets/imgicon1.png'), // fallback
+                        );
+                      }
+                    },
                   ),
                   decoration: BoxDecoration(
                     color: (presentUser == User)
